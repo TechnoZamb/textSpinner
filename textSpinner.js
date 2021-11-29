@@ -7,7 +7,7 @@ class TextSpinner {
         // the ratio at which the circle will shrink when spinning. ranging from 0 (no shrink) to 1 (shrink to radius 0)
         circleShrinkRate: 0.5,
 
-        fontScript: "svgfont.php",
+        fontFile: "font.ttf",
         horizontalAlignment: "left",
         verticalAlignment: "top",
         includeOverflowInViewbox: true,
@@ -69,28 +69,33 @@ class TextSpinner {
     }
 
     async sesso(svg_id, options) {
-        await this.injectScripts();
-        
         if (!svg_id)
             throw "Invalid svg ID.";
-
+        
         var svg = $("#" + svg_id);
         if (!svg[0] || svg[0].nodeName !== "svg")
             throw "SVG element not found.";
+        
+        await this.injectScripts();
 
+        // parse options first and then data in svg attributes so that they have priority
         this.parseOptions(options);
+        this.parseOptions(svg.data());
+        // freeze options so they can't change later
         Object.deepFreeze(this.options);
 
-        // request font path from php file
-        $.ajaxSetup({ async: false });
-        var remote = $.post(this.options.fontScript, { text: svg.data("text"), 'font-family': svg.data("font-family"), 'font-size': svg.data("font-size") }).responseText;
-        svg.html(remote);
+        // load svg path letters
+        var otFont = await opentype.load(this.options.fontFile); // ot stands for opentype object
+        var otPaths = otFont.getPaths(svg.data("text"), 0, 0, svg.data("font-size"));
+        var g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        svg.append(g);
+
+        for (let otPath of otPaths) {
+            g.append(otPath.toDOMElement(2));
+        }
         
         this._sSvg = Snap(svg[0]);
-        this._sContainer = this._sSvg.select("g");
-
-        // bake all transforms
-        flatten(this._sSvg.node);
+        this._sContainer = Snap(g);
 
         var gBox = this._sContainer.getBBox();
         var svgBox = this._sSvg.node.getBoundingClientRect();
@@ -158,7 +163,8 @@ class TextSpinner {
             "https://code.jquery.com/jquery-3.6.0.min.js",
             "https://cdn.jsdelivr.net/snap.svg/0.1.0/snap.svg-min.js",
             "https://rawcdn.githack.com/overjase/snap-easing/3b6125b59c9409b199881887eebfeee4dd65bcf3/snap.svg.easing.js",
-            "https://gistcdn.githack.com/TechnoZamb/afdd1663f3a50d896812bfb2c9f8b975/raw/4d8cab3ab5e0dc32b8549df3c1812caca44f59ea/flatten.js"
+            "https://gistcdn.githack.com/TechnoZamb/afdd1663f3a50d896812bfb2c9f8b975/raw/4d8cab3ab5e0dc32b8549df3c1812caca44f59ea/flatten.js",
+            "https://cdn.jsdelivr.net/npm/opentype.js@latest/dist/opentype.min.js"
         ];
 
         var tot = 0, completed = 0;
