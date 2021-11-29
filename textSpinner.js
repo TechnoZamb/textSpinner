@@ -406,12 +406,12 @@ class TextSpinner {
                     if (j == i) continue;
 
                     // get the first point of this loop
-                    var first_point = loops[j].split(/[a-zA-Z]/g).filter(e => e)[0].split(/ |,/g).filter(e => e);
-                    if (first_point.length != 2) {
+                    var path_points = Snap.parsePathString(loops[j]);
+                    if (path_points.length == 0) {
                         throw "Invalid path data.";
                     }
 
-                    [temp_point.x, temp_point.y] = first_point;
+                    [temp_point.x, temp_point.y] = this.getEndPointOfSegment(path_points[0]);
 
                     // we're looking for a loop that contains all other loops
                     if (!temp_path.isPointInFill(temp_point)) {
@@ -435,12 +435,12 @@ class TextSpinner {
     // takes a segment in the form of a string or array and returns the actual final point of the command
     getEndPointOfSegment(segment) {
         if (!(segment instanceof Array))
-            segment = segment.split(/ |,/g).filter(e => e);
+            segment = Snap.path.toAbsolute(segment)[0];
         switch (segment[0]) {
             case 'H':
-                return [parseInt(segment[1]), 0];
+                return [parseInt(segment[1]), null];
             case 'V':
-                return [0, parseInt(segment[1])];
+                return [null, parseInt(segment[1])];
             case 'Z': case 'z':
                 return null;
             default:
