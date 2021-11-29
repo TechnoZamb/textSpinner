@@ -65,28 +65,30 @@ class TextSpinner {
     _lastTransitionStart;
 
     constructor(svg_id, options) {
-        this.sesso(svg_id, options);
-    }
-
-    async sesso(svg_id, options) {
-        if (!svg_id)
+        if (!svg_id) {
             throw "Invalid svg ID.";
+        }
         
         var svg = $("#" + svg_id);
-        if (!svg[0] || svg[0].nodeName !== "svg")
+        if (!svg[0] || svg[0].nodeName !== "svg") {
             throw "SVG element not found.";
+        }
         
-        await this.injectScripts();
-
         // parse options first and then data in svg attributes so that they have priority
         this.parseOptions(options);
         this.parseOptions(svg.data());
         // freeze options so they can't change later
         Object.deepFreeze(this.options);
 
+        this.setup(svg);
+    }
+    
+    async setup(svg) {
+        await this.injectScripts();
+
         // load svg path letters
         var otFont = await opentype.load(this.options.fontFile); // ot stands for opentype object
-        var otPaths = otFont.getPaths(svg.data("text"), 0, 0, svg.data("font-size"));
+        var otPaths = otFont.getPaths(this.options.text, 0, 0, this.options.fontSize);
         var g = document.createElementNS("http://www.w3.org/2000/svg", "g");
         svg.append(g);
 
