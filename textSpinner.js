@@ -39,7 +39,6 @@ class TextSpinner {
     _sSvg; _sContainer; _sLetters; // s stands for snap object
     _ogBoxContainer;
     _debugBox;
-    _lastTransitionStart;
 
     constructor(svg_id, options) {
         if (!svg_id) {
@@ -71,7 +70,10 @@ class TextSpinner {
         svg.append(g);
 
         for (let otPath of otPaths) {
-            g.append(otPath.toDOMElement(2));
+            // do not append empty paths
+            if (otPath.commands?.length > 0) {
+                g.append(otPath.toDOMElement(2));
+            }
         }
         
         this._sSvg = Snap(svg[0]);
@@ -156,8 +158,8 @@ class TextSpinner {
             script.type = "text/javascript";
             script.defer = "defer";
             script.onload = () => completed++;
-            document.head.appendChild(script);
             tot++;
+            document.head.appendChild(script);
         };
 
         if (!window.jQuery) loadScript(requiredScripts.jQuery);
@@ -238,7 +240,7 @@ class TextSpinner {
         this._sLetters = this._sContainer.selectAll("path");
 
         // center position of one of the circles when at rotation = 0 (and container rotation = 0)
-        var circleStartPos = [this._ogBoxContainer.cx, this._ogBoxContainer.cy - this.circleDistance - this.circleRadius];
+        var circleStartPos = [this._ogBoxContainer.cx, this._ogBoxContainer.cy - this.circleDistance];
 
         // sort circles from left to right
         var circles_lToR = [];
@@ -263,25 +265,32 @@ class TextSpinner {
             this._sContainer.node.appendChild(circle.c.node);
             circle.c.attr({ d: this._letterPaths[i].circle, transform: `t${(circle.b.x + circle.b.width / 2) - circleStartPos[0]},${(circle.b.y + circle.b.height / 2) - circleStartPos[1]}` });
             circle = Snap(flatten(circle.c.node));	
-            circle.animate({ d: this._letterPaths[i].original }, 300, mina.easeout);        }
+            circle.animate({ d: this._letterPaths[i].original }, 300, mina.easeout);
+        }
     }
 
     // animates letters into circles animations
     async animateLettersToCircles() {
         this._sLetters = this._sContainer.selectAll("path");
+        var lastTransitionStart;
 
         // when all letters have reached the center, start the container rotation
         this._nAnimated = 0; // keep track of how many letters have reached the center
         
-        for (let letter of this._sLetters.items) {
-            this._letterPaths.push({
-                original: letter.node.getAttribute("d"),
-                circle: this.generateLetterToCircleAnimation(letter)
-            });
+        // if it's the first time animating, calculate and save paths
+        if (this._letterPaths.length === 0) {
+            for (let letter of this._sLetters.items) {
+                this._letterPaths.push({
+                    original: letter.attr("d"),
+                    circle: this.generateLetterToCircleAnimation(letter)
+                });
+            }
         }
 
-        for (let i = 0; i < this._sLetters.items.length; i++) {
+        for (let i = 0; i < this._sLetters.length; i++) {
             this._sLetters[i].animate({ d: this._letterPaths[i].circle }, this.timings.letterToCircleTransition.ms, mina[this.timings.letterToCircleTransition.easing], () => {
+                
+                // letter to circle animation completed; start spinning
                 var letter = this._sLetters[this._nAnimated];
                 letter.attr("d", `M ${this._ogBoxContainer.cx - this.circleRadius},${this._ogBoxContainer.cy - this.circleDistance} a ${this.circleRadius},${
                     this.circleRadius} 0 1,0 ${this.circleRadius * 2},0 a ${this.circleRadius},${this.circleRadius} 0 1,0 ${-this.circleRadius * 2},0`);
@@ -297,8 +306,8 @@ class TextSpinner {
             });
             
             if (i !== 0)
-                await this.sleep(Math.max(0, this.timings.delayBetweenLetterTransitions - (Date.now() - this._lastTransitionStart)));
-            this._lastTransitionStart = Date.now();
+                await this.sleep(Math.max(0, this.timings.delayBetweenLetterTransitions - (Date.now() - lastTransitionStart)));
+            lastTransitionStart = Date.now();
         }
     }
 
