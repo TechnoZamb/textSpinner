@@ -7,41 +7,18 @@ class TextSpinner {
         // the ratio at which the circle will shrink when spinning. ranging from 0 (no shrink) to 1 (shrink to radius 0)
         circleShrinkRate: 0.5,
 
-        fontFile: "font.ttf",
+        text: "",
+        fontSize: 30,
+        fontFile: null,
         horizontalAlignment: "left",
         verticalAlignment: "top",
+        // takes into account the overflow caused by the circles when placing the text near a border
         includeOverflowInViewbox: true,
+        // attributes to be assigned to each path
         pathAttrs: { },
         drawDebugBox: false
     }
-/*
-    get circleRadius_range() {
-        return this._circleRadius_range;
-    }
-    set circleRadius_range(value) {
-        if (value < 0)
-            throw "'value' must be > 0.";
-        this._circleRadius_range = value;
-    }
 
-    get circleDistance_range() {
-        return this._circleDistance_range;
-    }
-    set circleDistance_range(value) {
-        if (value < 0)
-            throw "'value' must be > 0.";
-        this._circleDistance_range = value;
-    }
-
-    get circleShrinkRate() {
-        return this._circleShrinkRate;
-    }
-    set circleShrinkRate(value) {
-        if (value < 0 || value > 1)
-            throw "'value' must be between 0 and 1.";
-        this._circleShrinkRate = value;
-    }
-*/
     get circleRadius() {
         return this.options.circleRadius_range * this._ogBoxContainer.height / 2;
     }
@@ -53,7 +30,7 @@ class TextSpinner {
         letterToCircleTransition: { ms: 300, easing: 'easein' },
         delayBetweenLetterTransitions: 60,
         letterCircleSpin: { ms: 1200, easing: 'easeInOutQuad' },
-        containerSpin: { ms: 3000, easing: 'linear' }
+        containerSpin: { ms: 0, easing: 'linear' }
     };
 
     _animPlaying = false; // flag saves animation state
@@ -159,16 +136,17 @@ class TextSpinner {
         if (this.options?.drawDebugBox) this.drawDebugBox();
     }
 
+    // injects the required scripts if not already included
     async injectScripts() {
-        var script = document.createElement("script");
         var requiredScripts = [
             "https://code.jquery.com/jquery-3.6.0.min.js",
-            "https://cdn.jsdelivr.net/snap.svg/0.1.0/snap.svg-min.js",
-            "https://rawcdn.githack.com/overjase/snap-easing/3b6125b59c9409b199881887eebfeee4dd65bcf3/snap.svg.easing.js",
+            "https://cdn.jsdelivr.net/snap.svg/0.4.1/snap.svg-min.js",
             "https://gistcdn.githack.com/TechnoZamb/afdd1663f3a50d896812bfb2c9f8b975/raw/4d8cab3ab5e0dc32b8549df3c1812caca44f59ea/flatten.js",
-            "https://cdn.jsdelivr.net/npm/opentype.js@latest/dist/opentype.min.js"
+            "https://cdn.jsdelivr.net/npm/opentype.js@latest/dist/opentype.min.js",
+            "https://rawcdn.githack.com/overjase/snap-easing/3b6125b59c9409b199881887eebfeee4dd65bcf3/snap.svg.easing.js",
         ];
-
+        
+        var script = document.createElement("script");
         var tot = 0, completed = 0;
 
         for (let s of requiredScripts) {
@@ -176,6 +154,7 @@ class TextSpinner {
                 script = document.createElement("script");
                 script.src = s;
                 script.type = "text/javascript";
+                script.defer = "defer";
                 script.onload = () => completed++;
                 document.head.appendChild(script);
 
@@ -186,6 +165,7 @@ class TextSpinner {
         while (completed !== tot) await this.sleep(200);
     }
 
+    // parses and validates options
     parseOptions(options) {
         if (!options) return;
 
@@ -198,6 +178,33 @@ class TextSpinner {
 
                 case 'timings':
                     this.timings = value;
+                    break;
+
+                case 'circleRadius_range': case 'circleRadiusRange':
+                    if (value < 0) throw 'The circle radius must be 0 or higher.';
+                    else this.options['circleRadius_range'] = value;
+                    break;
+
+                case 'circleDistance_range': case 'circleDistanceRange':
+                    if (value < 0) throw 'The circle distance must be 0 or higher.';
+                    else this.options['circleDistance_range'] = value;
+                    break;
+
+                case 'circleShrinkRate':
+                    if (value < 0 || value > 1) throw 'The circle shrink rate must be between 0 and 1 inclusive.';
+                    else this.options[key] = value;
+                    break;
+
+                case 'horizontalAlignment':
+                    var values = ['left', 'center', 'right'];
+                    if (!values.includes(value)) throw `'horizontalAlignment' must be either '${values.join("', '")}'.`;
+                    else this.options[key] = value;
+                    break;
+
+                case 'verticalAlignment':
+                    var values = ['top', 'center', 'bottom'];
+                    if (!values.includes(value)) throw `'verticalAlignment' must be either '${values.join("', '")}'.`;
+                    else this.options[key] = value;
                     break;
 
                 default:
@@ -244,6 +251,7 @@ class TextSpinner {
 
         this._sContainer.node.innerHTML = ''; // remove all children
 
+        // re-insert letters in new order
         for (let i = 0; i < circles_lToR.length; i++) {
             var circle = circles_lToR[i];
             this._sContainer.node.appendChild(circle.c.node);
