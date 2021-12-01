@@ -30,7 +30,7 @@ class TextSpinner {
         letterToCircleTransition: { ms: 300, easing: 'easein' },
         delayBetweenLetterTransitions: 60,
         letterCircleSpin: { ms: 1200, easing: 'easeInOutQuad' },
-        containerSpin: { ms: 0, easing: 'linear' }
+        containerSpin: { ms: 3000, easing: 'linear' }
     };
 
     _animPlaying = false; // flag saves animation state
@@ -46,14 +46,14 @@ class TextSpinner {
             throw "Invalid svg ID.";
         }
         
-        var svg = $("#" + svg_id);
-        if (!svg[0] || svg[0].nodeName !== "svg") {
+        var svg = document.querySelector("#" + svg_id);
+        if (!svg || svg.nodeName !== "svg") {
             throw "SVG element not found.";
         }
         
         // parse options first and then data in svg attributes so that they have priority
         this.parseOptions(options);
-        this.parseOptions(svg.data());
+        this.parseOptions(svg.dataset);
         // freeze options so they can't change later
         Object.deepFreeze(this.options);
 
@@ -62,6 +62,7 @@ class TextSpinner {
     
     async setup(svg) {
         await this.injectScripts();
+        svg = $(svg);
 
         // load svg path letters
         var otFont = await opentype.load(this.options.fontFile); // ot stands for opentype object
@@ -138,29 +139,34 @@ class TextSpinner {
 
     // injects the required scripts if not already included
     async injectScripts() {
-        var requiredScripts = [
-            "https://code.jquery.com/jquery-3.6.0.min.js",
-            "https://cdn.jsdelivr.net/snap.svg/0.4.1/snap.svg-min.js",
-            "https://gistcdn.githack.com/TechnoZamb/afdd1663f3a50d896812bfb2c9f8b975/raw/4d8cab3ab5e0dc32b8549df3c1812caca44f59ea/flatten.js",
-            "https://cdn.jsdelivr.net/npm/opentype.js@latest/dist/opentype.min.js",
-            "https://rawcdn.githack.com/overjase/snap-easing/3b6125b59c9409b199881887eebfeee4dd65bcf3/snap.svg.easing.js",
-        ];
+        var requiredScripts = {
+            jQuery: "https://code.jquery.com/jquery-3.6.0.min.js",
+            Snap: "https://cdn.jsdelivr.net/npm/snapsvg@0.4.0/dist/snap.svg.min.js",
+            opentype: "https://cdn.jsdelivr.net/npm/opentype.js@latest/dist/opentype.min.js",
+            flatten: "https://gistcdn.githack.com/TechnoZamb/afdd1663f3a50d896812bfb2c9f8b975/raw/4d8cab3ab5e0dc32b8549df3c1812caca44f59ea/flatten.js",
+            easings: "https://rawcdn.githack.com/overjase/snap-easing/3b6125b59c9409b199881887eebfeee4dd65bcf3/snap.svg.easing.js",
+        };
         
         var script = document.createElement("script");
         var tot = 0, completed = 0;
 
-        for (let s of requiredScripts) {
-            if ($(`script[src='${s}']`).length == 0) {
-                script = document.createElement("script");
-                script.src = s;
-                script.type = "text/javascript";
-                script.defer = "defer";
-                script.onload = () => completed++;
-                document.head.appendChild(script);
+        var loadScript = function (s) {
+            script = document.createElement("script");
+            script.src = s;
+            script.type = "text/javascript";
+            script.defer = "defer";
+            script.onload = () => completed++;
+            document.head.appendChild(script);
+            tot++;
+        };
 
-                tot++;
-            }
+        if (!window.jQuery) loadScript(requiredScripts.jQuery);
+        if (window.Snap?.version !== '0.4.0') {
+            delete window.Snap; loadScript(requiredScripts.Snap);
         }
+        if (!window.opentype) loadScript(requiredScripts.opentype);
+        if (!window.flatten) loadScript(requiredScripts.flatten);
+        if (!window.mina?.easeInOutQuad) loadScript(requiredScripts.easings);
 
         while (completed !== tot) await this.sleep(200);
     }
