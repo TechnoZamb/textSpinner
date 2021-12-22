@@ -132,7 +132,7 @@ class TextSpinner {
             for (let path of this._sContainer.selectAll("path").items) {
                 for (const [key, value] of pathAttrs) {
                     path.attr(key, value);
-               }
+                }
             }
         }
         
@@ -150,15 +150,14 @@ class TextSpinner {
         };
         
         var script = document.createElement("script");
-        var tot = 0, completed = 0;
+        var promises = [];
 
-        var loadScript = function (s) {
+        var loadScript = (s) => {
             script = document.createElement("script");
             script.src = s;
             script.type = "text/javascript";
             script.defer = "defer";
-            script.onload = () => completed++;
-            tot++;
+            promises.push(new Promise(r => script.onload = r));
             document.head.appendChild(script);
         };
 
@@ -169,8 +168,8 @@ class TextSpinner {
         if (!window.opentype) loadScript(requiredScripts.opentype);
         if (!window.flatten) loadScript(requiredScripts.flatten);
         if (!window.mina?.easeInOutQuad) loadScript(requiredScripts.easings);
-
-        while (completed !== tot) await this.sleep(200);
+        
+        return Promise.all(promises);
     }
 
     // parses and validates options
@@ -308,6 +307,8 @@ class TextSpinner {
             if (i !== 0)
                 await this.sleep(Math.max(0, this.timings.delayBetweenLetterTransitions - (Date.now() - lastTransitionStart)));
             lastTransitionStart = Date.now();
+            
+           //await this.sleep(this.timings.delayBetweenLetterTransitions);
         }
     }
 
