@@ -145,7 +145,7 @@ class TextSpinner {
             jQuery: "https://code.jquery.com/jquery-3.6.0.min.js",
             Snap: "https://cdn.jsdelivr.net/npm/snapsvg@0.4.0/dist/snap.svg.min.js",
             opentype: "https://cdn.jsdelivr.net/npm/opentype.js@latest/dist/opentype.min.js",
-            flatten: "https://gistcdn.githack.com/TechnoZamb/afdd1663f3a50d896812bfb2c9f8b975/raw/4d8cab3ab5e0dc32b8549df3c1812caca44f59ea/flatten.js",
+            flatten: "https://gistcdn.githack.com/TechnoZamb/9b4e6aee200b72a224d79a1f234407bc/raw/1d385884f62e69ed5f4e99a2e85b2cc18cd040f3/flatten.js",
             easings: "https://rawcdn.githack.com/overjase/snap-easing/3b6125b59c9409b199881887eebfeee4dd65bcf3/snap.svg.easing.js",
         };
         
