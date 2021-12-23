@@ -33,10 +33,8 @@ class TextSpinner {
         containerSpin: { ms: 3000, easing: 'linear' }
     };
 
-    _animPlaying = false; // flag saves animation state
-    _nAnimated = 0;
-    _letterPaths = [];
-    _sSvg; _sContainer; _sLetters; // s stands for snap object
+    _letters = new Letters();
+    _sSvg; _sContainer; // s stands for snap object
     _ogBoxContainer;
     _debugBox;
 
@@ -69,6 +67,7 @@ class TextSpinner {
         var g = document.createElementNS("http://www.w3.org/2000/svg", "g");
         svg.append(g);
 
+        // append paths to container
         for (let otPath of otPaths) {
             // do not append empty paths
             if (otPath.commands?.length > 0) {
@@ -78,10 +77,11 @@ class TextSpinner {
         
         this._sSvg = Snap(svg[0]);
         this._sContainer = Snap(g);
+        this._letters.setProperty("snapObj", this._sContainer.selectAll("path").items);
+        this._letters.setProperty("state", "stopped");
 
-        var gBox = this._sContainer.getBBox();
+        var gBox = this._ogBoxContainer = this._sContainer.getBBox();
         var svgBox = this._sSvg.node.getBoundingClientRect();
-        this._ogBoxContainer = gBox;
         
         // assign correct viewbox
         var viewBox = { x: 0, y: 0, width: svgBox.width, height: svgBox.height };
@@ -128,15 +128,23 @@ class TextSpinner {
 
         // assign path attributes
         var pathAttrs = Object.entries(this.options.pathAttrs);
-        if (pathAttrs && pathAttrs.length != 0) {
-            for (let path of this._sContainer.selectAll("path").items) {
+        if (pathAttrs && pathAttrs.length !== 0) {
+            for (let path of this._letters) {
                 for (const [key, value] of pathAttrs) {
-                    path.attr(key, value);
+                    path.snapObj.attr(key, value);
                 }
             }
         }
         
         if (this.options?.drawDebugBox) this.drawDebugBox();
+
+        // calculate and save paths for animation
+        for (let letter of this._letters) {
+            letter.paths = {
+                original: letter.snapObj.attr("d"),
+                circle: this.generateLetterToCircleAnimation(letter.snapObj)
+            };
+        }
     }
 
     // injects the required scripts if not already included
@@ -145,7 +153,7 @@ class TextSpinner {
             jQuery: "https://code.jquery.com/jquery-3.6.0.min.js",
             Snap: "https://cdn.jsdelivr.net/npm/snapsvg@0.4.0/dist/snap.svg.min.js",
             opentype: "https://cdn.jsdelivr.net/npm/opentype.js@latest/dist/opentype.min.js",
-            flatten: "https://gistcdn.githack.com/TechnoZamb/9b4e6aee200b72a224d79a1f234407bc/raw/1d385884f62e69ed5f4e99a2e85b2cc18cd040f3/flatten.js",
+            flatten: "https://gistcdn.githack.com/TechnoZamb/afdd1663f3a50d896812bfb2c9f8b975/raw/4d8cab3ab5e0dc32b8549df3c1812caca44f59ea/flatten.js",
             easings: "https://rawcdn.githack.com/overjase/snap-easing/3b6125b59c9409b199881887eebfeee4dd65bcf3/snap.svg.easing.js",
         };
         
@@ -222,125 +230,142 @@ class TextSpinner {
     }
 
     startAnimation() {
-        if (this._animPlaying) return;
-        this._animPlaying = true;
+        if (this._letters.overallState !== "stopped") return;
 
         this.animateLettersToCircles();
     }
 
     stopAnimation() {
-        if (!this._animPlaying) return;
-        this._animPlaying = false;
+        if (this._letters.overallState === "stopped" || this._letters.overallState === "stopping") return;
 
         this._sContainer.stop();
         flatten(this._sContainer.node);
 
         // refresh letters
-        this._sLetters = this._sContainer.selectAll("path");
+        this._letters.setProperty("snapObj", this._sContainer.selectAll("path").items);
 
         // center position of one of the circles when at rotation = 0 (and container rotation = 0)
         var circleStartPos = [this._ogBoxContainer.cx, this._ogBoxContainer.cy - this.circleDistance];
 
         // sort circles from left to right
         var circles_lToR = [];
-        for (let letter of this._sLetters.items) {
-            
-            letter.stop();
-            var bbox = letter.node.getBBox();
+        for (let letter of this._letters) {
+            var bbox = letter.snapObj.node.getBBox();
 
             for (let i = 0; i < circles_lToR.length + 1; i++) {
                 if (bbox.x < (circles_lToR[i]?.b.x ?? bbox.x + 1)) {
-                    circles_lToR.splice(i, 0, { b: bbox, c: letter });
+                    circles_lToR.splice(i, 0, { b: bbox, l: letter });
                     break;
                 } 
             }
         }
 
-        this._sContainer.node.innerHTML = ''; // remove all children
+        // remove all children
+        this._sContainer.node.innerHTML = '';
 
         // re-insert letters in new order
         for (let i = 0; i < circles_lToR.length; i++) {
-            var circle = circles_lToR[i];
-            this._sContainer.node.appendChild(circle.c.node);
-            circle.c.attr({ d: this._letterPaths[i].circle, transform: `t${(circle.b.x + circle.b.width / 2) - circleStartPos[0]},${(circle.b.y + circle.b.height / 2) - circleStartPos[1]}` });
-            circle = Snap(flatten(circle.c.node));	
-            circle.animate({ d: this._letterPaths[i].original }, 300, mina.easeout);
+            var letter = circles_lToR[i];
+            this._sContainer.node.appendChild(letter.l.snapObj.node);
+
+            letter.l.snapObj.stop();
+
+            // if the letter has finished its letter-to-circle animation, its path was set to a simplified one.
+            // set it back to the original one + transforms for the current position.
+            if (letter.l.state === "playing") {
+                letter.l.snapObj.attr({ d: letter.l.paths.circle, transform: `t${(letter.b.x + letter.b.width / 2) - circleStartPos[0]},${
+                    (letter.b.y + letter.b.height / 2) - circleStartPos[1]}` });
+            }
+
+            letter.l.state = "stopping";
+            
+            var newLetter = Snap(flatten(letter.l.snapObj.node));
+            letter.l.snapObj = newLetter;
+            newLetter.animate({ d: letter.l.paths.original }, 300, mina.easeout, () => function(index, context) {
+                //circle.c.attr()
+                var l = context._letters[index];
+                l.snapObj.attr("d", l.paths.original);
+                l.state = "stopped";
+            }(i, this));
         }
+
+        // refresh letters to put them back in order
+        this._letters.setProperty("snapObj", this._sContainer.selectAll("path").items);
     }
 
     // animates letters into circles animations
     async animateLettersToCircles() {
-        this._sLetters = this._sContainer.selectAll("path");
+        if (this._letters.overallState !== "stopped") return;
+
         var lastTransitionStart;
-
-        // when all letters have reached the center, start the container rotation
-        this._nAnimated = 0; // keep track of how many letters have reached the center
         
-        // if it's the first time animating, calculate and save paths
-        if (this._letterPaths.length === 0) {
-            for (let letter of this._sLetters.items) {
-                this._letterPaths.push({
-                    original: letter.attr("d"),
-                    circle: this.generateLetterToCircleAnimation(letter)
-                });
-            }
-        }
+        for (let i = 0; i < this._letters.length; i++) {
 
-        for (let i = 0; i < this._sLetters.length; i++) {
-            this._sLetters[i].animate({ d: this._letterPaths[i].circle }, this.timings.letterToCircleTransition.ms, mina[this.timings.letterToCircleTransition.easing], () => {
-                
-                // letter to circle animation completed; start spinning
-                var letter = this._sLetters[this._nAnimated];
-                letter.attr("d", `M ${this._ogBoxContainer.cx - this.circleRadius},${this._ogBoxContainer.cy - this.circleDistance} a ${this.circleRadius},${
-                    this.circleRadius} 0 1,0 ${this.circleRadius * 2},0 a ${this.circleRadius},${this.circleRadius} 0 1,0 ${-this.circleRadius * 2},0`);
+            if (this._letters[i].state !== "stopped") return;
+
+            // set letter state to "starting" and animate
+            this._letters[i].state = "starting";
+            this._letters[i].snapObj.animate({ d: this._letters[i].paths.circle }, this.timings.letterToCircleTransition.ms, mina[this.timings.letterToCircleTransition.easing], () => function(letter, context) {
+
+                if (letter.state !== "starting") return;
+
+                // set letter state to "playing"
+                letter.state = "playing";
+
+                // set easier path to animate for spinning
+                letter.snapObj.attr("d", `M ${context._ogBoxContainer.cx - context.circleRadius},${context._ogBoxContainer.cy - context.circleDistance} a ${context.circleRadius},${
+                    context.circleRadius} 0 1,0 ${context.circleRadius * 2},0 a ${context.circleRadius},${context.circleRadius} 0 1,0 ${-context.circleRadius * 2},0`);
             
-                if (this.options.circleShrinkRate !== 0)
-                    this.animateCircleShrink(letter, this.splitTimingInTwo(this.timings.letterCircleSpin.ms, this.timings.letterCircleSpin.easing));
+                // if shrinking is enabled, spin and shrink, else just spin
+                if (context.options.circleShrinkRate !== 0)
+                    context.animateCircleShrink(letter, context.splitTimingInTwo(context.timings.letterCircleSpin.ms, context.timings.letterCircleSpin.easing));
                 else
-                    this.animateCircleSpin(letter);
+                    context.animateCircleSpin(letter);
 
-                if (this._nAnimated++ == this._sLetters.length - 1) {
-                    this.animateContainerSpin();
+                // if all letters were animated, start spinning
+                if (context._letters.overallState === "playing") {
+                    context.animateContainerSpin();
                 }
-            });
+            }(this._letters[i], this));
             
             if (i !== 0)
                 await this.sleep(Math.max(0, this.timings.delayBetweenLetterTransitions - (Date.now() - lastTransitionStart)));
             lastTransitionStart = Date.now();
-            
-           //await this.sleep(this.timings.delayBetweenLetterTransitions);
         }
     }
 
     // animates all circles (letters) spinning around container center without shrinking
     animateCircleSpin(letter) {
-        letter.transform(`r0,${this._ogBoxContainer.cx},${this._ogBoxContainer.cy}`);
-        letter.animate({ transform: `r360,${this._ogBoxContainer.cx},${this._ogBoxContainer.cy}` }, this.timings.letterCircleSpin.ms, mina[this.timings.letterCircleSpin.easing],
+        if (letter.state !== "playing") return;
+
+        letter.snapObj.transform(`r0,${this._ogBoxContainer.cx},${this._ogBoxContainer.cy}`);
+        letter.snapObj.animate({ transform: `r360,${this._ogBoxContainer.cx},${this._ogBoxContainer.cy}` }, this.timings.letterCircleSpin.ms, mina[this.timings.letterCircleSpin.easing],
             () => this.animateCircleSpin(letter));
     }
 
     // animates circles spin and shrink/grow
-    animateCircleShrink(letter, timings) {
-        var shrink = () => {
-            letter.transform(`r0,${this._ogBoxContainer.cx},${this._ogBoxContainer.cy}`);
-            letter.animate({ transform: `r180,${this._ogBoxContainer.cx},${this._ogBoxContainer.cy}s${1 - this.options.circleShrinkRate},${
+    animateCircleShrink(letter, timings, grow) {
+        if (letter.state !== "playing") return;
+        
+        if (grow) {
+            return letter.snapObj.animate({ transform: `r360,${this._ogBoxContainer.cx},${this._ogBoxContainer.cy}s1,1,${this._ogBoxContainer.cx},${
+                this._ogBoxContainer.cy - this.circleDistance}` }, timings[1][0], mina[timings[1][1]], () => this.animateCircleShrink(letter, timings, false));
+        }
+        else {
+            letter.snapObj.transform(`r0,${this._ogBoxContainer.cx},${this._ogBoxContainer.cy}`);
+            return letter.snapObj.animate({ transform: `r180,${this._ogBoxContainer.cx},${this._ogBoxContainer.cy}s${1 - this.options.circleShrinkRate},${
                 1 - this.options.circleShrinkRate},${this._ogBoxContainer.cx},${this._ogBoxContainer.cy - this.circleDistance}` },
-                timings[0][0], mina[timings[0][1]], grow);
+                timings[0][0], mina[timings[0][1]], () => this.animateCircleShrink(letter, timings, true));
         }
-        var grow = () => {
-            letter.animate({ transform: `r360,${this._ogBoxContainer.cx},${this._ogBoxContainer.cy}s1,1,${this._ogBoxContainer.cx},${
-                this._ogBoxContainer.cy - this.circleDistance}` }, timings[1][0], mina[timings[1][1]], shrink);
-        }
-
-        shrink();
     }
 
     // animate container spinning
     animateContainerSpin() {
-        if (!this._animPlaying) return;
+        if (this._letters.overallState !== "playing") return;
 
         this._sContainer.transform(`r0,${this._ogBoxContainer.cx},${this._ogBoxContainer.cy}`);
-        this._sContainer.animate({ transform: `r360,${this._ogBoxContainer.cx},${this._ogBoxContainer.cy}` }, this.timings.containerSpin.ms, mina[this.timings.containerSpin.easing], () => this.animateContainerSpin());
+        this._sContainer.animate({ transform: `r360,${this._ogBoxContainer.cx},${this._ogBoxContainer.cy}` }, this.timings.containerSpin.ms,
+            mina[this.timings.containerSpin.easing], () => this.animateContainerSpin());
     }
 
     // returns path of the circle to turn the letter into
@@ -542,3 +567,37 @@ Object.defineProperty(Object.prototype, 'deepFreeze', {
     },
     enumerable: false
 });
+
+class Letters extends Array {
+
+    // returns the overall state of the animation.
+    // stopped: all letters ar at their initial position and not animated;
+    // starting: one or more letters are in their letter-to-circle animation;
+    // playing: all letters are in their spinning animation;
+    // stopping: one or more letters are in their circle-to-letter animation. 
+    get overallState() {
+        var states = this.map(o => o.state);
+        if (states.includes("starting")) return "starting";
+        if (states.includes("stopping")) return "stopping";
+        if (states.every(o => o === "stopped")) return "stopped";
+        if (states.every(o => o === "playing")) return "playing";
+    }
+
+    // sets the same value, or pairs each value to each element if value is iteratable, to the property 'prop' of each element in the array.
+    setProperty(prop, value) {
+        if (!prop) return;
+        if (value && typeof value !== "string" && typeof value[Symbol.iterator] === "function") {
+            for (let i = 0; i < value.length; i++) {
+                this[i] = this[i] || {};
+                delete this[i][prop];
+                this[i][prop] = value[i];
+            }
+        }
+        else {
+            for (let i = 0; i < this.length; i++) {
+                delete this[i][prop];
+                this[i][prop] = value;
+            }
+        }
+    }
+}
